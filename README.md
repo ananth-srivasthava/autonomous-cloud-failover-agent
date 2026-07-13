@@ -85,7 +85,7 @@ By separating deterministic routing from AI-generated operational guidance, ARIA
 
 ## 🏗️ System Architecture
 <p align="center">
-  <img src="Assets/Architecture.png" width="95%" alt="System Architecture">
+  <img src="Assets/system_architecture.png" width="95%" alt="System Architecture">
 </p>
 
 ### Hybrid AI Decision Pipeline
