@@ -84,7 +84,6 @@ By separating deterministic routing from AI-generated operational guidance, ARIA
 - Health monitoring endpoint.
 
 ## 🏗️ System Architecture
-
 <p align="center">
   <img src="Assets/Architecture.png" width="95%" alt="System Architecture">
 </p>
