@@ -18,7 +18,7 @@
 > **Autonomous Cloud Failover Agent — SRE Assistant** is an intelligent cloud operations platform designed to assist Site Reliability Engineers during infrastructure failures. At the core of the platform is **ARIA (Autonomous Routing & Infrastructure Agent)**, an AI assistant that combines deterministic routing algorithms with Large Language Models to automate cloud failover analysis, disaster recovery planning, and infrastructure incident response.
 
 <p align="center">
-  <img src="assets/dashboard.png" width="95%" alt="ARIA Dashboard">
+  <img src="Assets/dashboard.png" width="95%" alt="Autonomous Cloud Failover Dashboard">
 </p>
 
 ---
@@ -42,6 +42,11 @@ When an operator reports an infrastructure incident, ARIA performs the following
 7. 📝 Records the incident and updates the operational dashboard.
 
 By separating deterministic routing from AI-generated operational guidance, ARIA delivers **explainable**, **reliable**, and **production-oriented** recommendations while preserving transparency in infrastructure decision-making.
+
+### 🕹️ Live System Demonstration
+<p align="center">
+  <img src="Assets/demo.gif" width="95%" alt="ARIA Live Failover Demo">
+</p>
 
 ## ✨ Key Features
 
