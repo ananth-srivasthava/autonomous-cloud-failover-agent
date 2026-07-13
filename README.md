@@ -44,9 +44,7 @@ When an operator reports an infrastructure incident, ARIA performs the following
 By separating deterministic routing from AI-generated operational guidance, ARIA delivers **explainable**, **reliable**, and **production-oriented** recommendations while preserving transparency in infrastructure decision-making.
 
 ### 🕹️ Live System Demonstration
-<p align="center">
-  <img src="Assets/demo.gif" width="95%" alt="Autonomous Cloud Failover Dashboard">
-</p>
+<img src="Assets/Demo.gif" width="95%" alt="ARIA Live Demo">
 
 ## ✨ Key Features
 
@@ -87,59 +85,9 @@ By separating deterministic routing from AI-generated operational guidance, ARIA
 
 ## 🏗️ System Architecture
 
-```text
-                         ┌─────────────────────────────┐
-                         │        Cloud Operator       │
-                         │ Reports an Infrastructure   │
-                         │        Incident             │
-                         └──────────────┬──────────────┘
-                                        │
-                                        ▼
-                          ┌─────────────────────────┐
-                          │  ARIA Chat Interface    │
-                          │   (Flask + Bootstrap)   │
-                          └──────────────┬──────────┘
-                                         │
-                    ┌────────────────────┴────────────────────┐
-                    │                                         │
-                    ▼                                         ▼
-      ┌───────────────────────────┐            ┌──────────────────────────┐
-      │ Incident Detection Engine │            │ Cloud Topology Manager   │
-      │ • NLP Parsing             │            │ • Data Center Graph      │
-      │ • DC Identification       │            │ • Latency Matrix         │
-      │ • Intent Classification   │            │ • Network State          │
-      └──────────────┬────────────┘            └─────────────┬────────────┘
-                     │                                       │
-                     └──────────────────┬────────────────────┘
-                                        ▼
-                          ┌─────────────────────────┐
-                          │ Dijkstra Routing Engine │
-                          │ • Exclude Failed Node   │
-                          │ • Compute Best Route    │
-                          │ • Rank Alternatives     │
-                          └──────────────┬──────────┘
-                                         │
-                                         ▼
-                      ┌───────────────────────────────────┐
-                      │ IBM watsonx.ai                    │
-                      │ Meta Llama 3.3 70B Instruct       │
-                      │                                   │
-                      │ Generates:                        │
-                      │ • Incident Analysis               │
-                      │ • Failover Report                 │
-                      │ • RTO Estimate                    │
-                      │ • Rollback Procedure              │
-                      └──────────────┬────────────────────┘
-                                     │
-                                     ▼
-                  ┌───────────────────────────────────────┐
-                  │ Dashboard & Incident Management       │
-                  │ • AI Response                         │
-                  │ • Failover Summary                    │
-                  │ • Incident Log                        │
-                  │ • Data Center Status                  │
-                  └───────────────────────────────────────┘
-```
+<p align="center">
+  <img src="Assets/Architecture.png" width="95%" alt="System Architecture">
+</p>
 
 ### Hybrid AI Decision Pipeline
 
