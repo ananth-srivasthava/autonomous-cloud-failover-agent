@@ -45,7 +45,7 @@ By separating deterministic routing from AI-generated operational guidance, ARIA
 
 ### 🕹️ Live System Demonstration
 <p align="center">
-  <img src="Assets/demo.gif" width="95%" alt="ARIA Live Failover Demo">
+  <img src="Assets/demo.gif" width="95%" alt="Autonomous Cloud Failover Dashboard">
 </p>
 
 ## ✨ Key Features
