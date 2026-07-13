@@ -1,0 +1,1045 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Autonomous Cloud Failover Agent — SRE Assistant</title>
+
+  <!-- Bootstrap 5.3 -->
+  <link rel="stylesheet"
+    href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" />
+  <!-- Bootstrap Icons -->
+  <link rel="stylesheet"
+    href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" />
+  <!-- Google Font: JetBrains Mono (terminal feel) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;600;700&family=Inter:wght@300;400;500;600;700&display=swap"
+    rel="stylesheet" />
+
+  <style>
+    /* ── Base ────────────────────────────────────────────────────────────── */
+    :root {
+      --bg-primary:   #0a0e1a;
+      --bg-secondary: #111827;
+      --bg-card:      #141b2d;
+      --bg-card-hover:#1a2236;
+      --border:       #1e2d45;
+      --border-bright:#2a3f5f;
+      --text-primary: #e2e8f0;
+      --text-muted:   #6b7fa3;
+      --text-dim:     #3d5278;
+      --accent:       #00d4ff;
+      --accent-dim:   #005f72;
+      --green:        #00ff88;
+      --green-dim:    #004422;
+      --red:          #ff4757;
+      --red-dim:      #3d0011;
+      --yellow:       #ffd32a;
+      --yellow-dim:   #3d2d00;
+      --purple:       #a78bfa;
+      --mono:         'JetBrains Mono', 'Courier New', monospace;
+      --sans:         'Inter', system-ui, sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      height: 100%;
+      margin: 0;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      font-family: var(--sans);
+      font-size: 14px;
+      line-height: 1.6;
+      overflow-x: hidden;
+    }
+
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: var(--bg-secondary); }
+    ::-webkit-scrollbar-thumb { background: var(--border-bright); border-radius: 3px; }
+
+    /* ── Scanline overlay ────────────────────────────────────────────────── */
+    body::before {
+      content: '';
+      position: fixed; inset: 0;
+      background: repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 2px,
+        rgba(0, 212, 255, 0.015) 2px,
+        rgba(0, 212, 255, 0.015) 4px
+      );
+      pointer-events: none;
+      z-index: 9999;
+    }
+
+    /* ── Top nav ─────────────────────────────────────────────────────────── */
+    .top-nav {
+      background: var(--bg-secondary);
+      border-bottom: 1px solid var(--border);
+      padding: 0 1.5rem;
+      height: 56px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky; top: 0; z-index: 1000;
+    }
+
+    .nav-brand {
+      display: flex; align-items: center; gap: 10px;
+      font-family: var(--mono);
+      font-weight: 700; font-size: 1rem;
+      color: var(--accent);
+      text-decoration: none;
+      letter-spacing: 0.05em;
+    }
+    .nav-brand .logo-icon {
+      width: 32px; height: 32px;
+      background: linear-gradient(135deg, var(--accent), var(--purple));
+      border-radius: 6px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.1rem; color: var(--bg-primary); font-weight: 900;
+      flex-shrink: 0;
+      box-shadow: 0 0 12px rgba(0,212,255,0.4);
+    }
+    .nav-brand .version {
+      font-size: 0.65rem; color: var(--text-muted);
+      background: var(--border); padding: 1px 6px; border-radius: 3px;
+    }
+
+    .status-bar {
+      display: flex; align-items: center; gap: 1rem;
+      font-family: var(--mono); font-size: 0.72rem; color: var(--text-muted);
+    }
+    .status-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--green);
+      box-shadow: 0 0 8px var(--green);
+      animation: pulse-green 2s infinite;
+    }
+    .status-dot.red { background: var(--red); box-shadow: 0 0 8px var(--red); animation: pulse-red 1s infinite; }
+
+    @keyframes pulse-green {
+      0%, 100% { opacity: 1; } 50% { opacity: 0.4; }
+    }
+    @keyframes pulse-red {
+      0%, 100% { opacity: 1; } 50% { opacity: 0.3; }
+    }
+
+    /* ── Main layout ─────────────────────────────────────────────────────── */
+    .main-layout {
+      display: grid;
+      grid-template-columns: 1fr 360px;
+      grid-template-rows: auto 1fr;
+      height: calc(100vh - 56px);
+      gap: 0;
+    }
+
+    /* ── Cards ───────────────────────────────────────────────────────────── */
+    .panel {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    .panel-header {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; gap: 8px;
+      background: rgba(255,255,255,0.02);
+      font-family: var(--mono); font-size: 0.78rem;
+      font-weight: 600; letter-spacing: 0.08em;
+      text-transform: uppercase; color: var(--text-muted);
+    }
+    .panel-header .ph-icon {
+      color: var(--accent); font-size: 1rem;
+    }
+
+    /* ── Network Dashboard ───────────────────────────────────────────────── */
+    .dashboard-panel {
+      grid-column: 1;
+      grid-row: 1;
+      margin: 1rem 0.5rem 0.5rem 1rem;
+    }
+
+    .dc-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 10px;
+      padding: 14px;
+    }
+
+    .dc-card {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 12px 14px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      position: relative;
+      overflow: hidden;
+    }
+    .dc-card::before {
+      content: '';
+      position: absolute; top: 0; left: 0;
+      width: 3px; height: 100%;
+      background: var(--green);
+      transition: background 0.3s;
+    }
+    .dc-card.down::before { background: var(--red); }
+    .dc-card.degraded::before { background: var(--yellow); }
+
+    .dc-card:hover {
+      background: var(--bg-card-hover);
+      border-color: var(--border-bright);
+      transform: translateY(-1px);
+    }
+    .dc-card.selected {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 1px var(--accent), 0 0 20px rgba(0,212,255,0.15);
+    }
+
+    .dc-id {
+      font-family: var(--mono); font-size: 0.7rem;
+      color: var(--accent); margin-bottom: 3px; font-weight: 600;
+    }
+    .dc-name { font-size: 0.82rem; font-weight: 500; margin-bottom: 6px; }
+    .dc-region { font-size: 0.68rem; color: var(--text-muted); }
+    .dc-status {
+      position: absolute; top: 10px; right: 12px;
+      font-size: 0.65rem; font-family: var(--mono);
+      padding: 2px 7px; border-radius: 3px; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.05em;
+    }
+    .status-online  { background: var(--green-dim);  color: var(--green); }
+    .status-down    { background: var(--red-dim);    color: var(--red); animation: blink 1.2s step-start infinite; }
+    .status-degraded{ background: var(--yellow-dim); color: var(--yellow); }
+
+    @keyframes blink { 50% { opacity: 0.3; } }
+
+    .dc-latency {
+      font-family: var(--mono); font-size: 0.72rem;
+      color: var(--text-muted); margin-top: 4px;
+    }
+    .dc-latency span { color: var(--green); font-weight: 600; }
+
+    /* ── Chat panel ──────────────────────────────────────────────────────── */
+    .chat-panel {
+      grid-column: 1;
+      grid-row: 2;
+      margin: 0 0.5rem 1rem 1rem;
+      display: flex; flex-direction: column;
+    }
+
+    .chat-messages {
+      flex: 1; overflow-y: auto;
+      padding: 16px;
+      display: flex; flex-direction: column; gap: 14px;
+    }
+
+    .msg-row {
+      display: flex; gap: 10px; align-items: flex-start;
+    }
+    .msg-row.user { flex-direction: row-reverse; }
+
+    .msg-avatar {
+      width: 32px; height: 32px; border-radius: 6px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 0.9rem; flex-shrink: 0; font-weight: 700;
+    }
+    .avatar-aria {
+      background: linear-gradient(135deg, var(--accent), var(--purple));
+      color: var(--bg-primary); font-family: var(--mono);
+      box-shadow: 0 0 10px rgba(0,212,255,0.3);
+    }
+    .avatar-user {
+      background: var(--border-bright);
+      color: var(--text-primary);
+    }
+
+    .msg-bubble {
+      max-width: 78%; padding: 10px 14px;
+      border-radius: 8px; line-height: 1.65;
+      font-size: 0.855rem;
+      white-space: pre-wrap; word-break: break-word;
+    }
+    .bubble-aria {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--accent);
+      color: var(--text-primary);
+    }
+    .bubble-user {
+      background: var(--accent-dim);
+      border: 1px solid rgba(0,212,255,0.2);
+      color: var(--text-primary);
+    }
+    .bubble-system {
+      background: var(--bg-primary);
+      border: 1px dashed var(--border-bright);
+      color: var(--text-muted);
+      font-family: var(--mono); font-size: 0.75rem;
+      align-self: center; max-width: 100%;
+      text-align: center; padding: 6px 14px;
+    }
+    .bubble-error {
+      border-left-color: var(--red);
+      background: var(--red-dim);
+    }
+
+    .msg-meta {
+      font-size: 0.65rem; color: var(--text-dim);
+      margin-top: 3px; font-family: var(--mono);
+    }
+    .msg-row.user .msg-meta { text-align: right; }
+
+    /* typing indicator */
+    .typing-indicator {
+      display: flex; gap: 4px; padding: 10px 14px;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--accent);
+      border-radius: 8px; width: fit-content;
+    }
+    .typing-dot {
+      width: 6px; height: 6px; border-radius: 50%;
+      background: var(--accent);
+      animation: typing 1.2s ease-in-out infinite;
+    }
+    .typing-dot:nth-child(2) { animation-delay: 0.2s; }
+    .typing-dot:nth-child(3) { animation-delay: 0.4s; }
+    @keyframes typing { 0%,80%,100%{transform:translateY(0)}40%{transform:translateY(-6px)} }
+
+    /* chat input */
+    .chat-input-row {
+      padding: 12px 16px;
+      border-top: 1px solid var(--border);
+      background: rgba(255,255,255,0.02);
+      display: flex; gap: 10px; align-items: flex-end;
+    }
+
+    .chat-input {
+      flex: 1; background: var(--bg-secondary);
+      border: 1px solid var(--border-bright);
+      color: var(--text-primary);
+      border-radius: 6px; padding: 9px 12px;
+      font-family: var(--sans); font-size: 0.875rem;
+      resize: none; max-height: 120px; min-height: 42px;
+      transition: border-color 0.2s;
+      line-height: 1.5;
+    }
+    .chat-input:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px rgba(0,212,255,0.12);
+    }
+    .chat-input::placeholder { color: var(--text-dim); }
+
+    .btn-send {
+      background: var(--accent);
+      color: var(--bg-primary);
+      border: none; border-radius: 6px;
+      width: 42px; height: 42px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.1rem; cursor: pointer;
+      transition: all 0.2s; flex-shrink: 0;
+      font-weight: 700;
+    }
+    .btn-send:hover { background: #33ddff; transform: scale(1.05); }
+    .btn-send:disabled { opacity: 0.4; cursor: default; transform: none; }
+
+    .quick-actions {
+      padding: 8px 16px 0;
+      display: flex; gap: 6px; flex-wrap: wrap;
+    }
+    .quick-btn {
+      font-size: 0.7rem; font-family: var(--mono);
+      padding: 3px 9px; border-radius: 3px;
+      border: 1px solid var(--border-bright);
+      background: transparent; color: var(--text-muted);
+      cursor: pointer; transition: all 0.15s;
+      white-space: nowrap;
+    }
+    .quick-btn:hover {
+      border-color: var(--accent); color: var(--accent);
+      background: rgba(0,212,255,0.06);
+    }
+
+    /* ── Right sidebar ───────────────────────────────────────────────────── */
+    .sidebar {
+      grid-column: 2;
+      grid-row: 1 / 3;
+      margin: 1rem 1rem 1rem 0.5rem;
+      display: flex; flex-direction: column; gap: 12px;
+      overflow-y: auto;
+    }
+
+    /* Incident log ─────────────────────── */
+    .incident-panel { flex-shrink: 0; }
+
+    .incident-list {
+      max-height: 340px; overflow-y: auto;
+      padding: 8px;
+    }
+
+    .incident-item {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--red);
+      border-radius: 4px;
+      padding: 10px 12px;
+      margin-bottom: 8px;
+      font-size: 0.78rem;
+      animation: slideIn 0.3s ease;
+      cursor: default;
+      transition: background 0.2s;
+    }
+    .incident-item:hover { background: var(--bg-card-hover); }
+    .incident-item.mitigated { border-left-color: var(--green); }
+
+    @keyframes slideIn { from { opacity:0; transform:translateX(10px); } to { opacity:1; transform:none; } }
+
+    .incident-id {
+      font-family: var(--mono); font-size: 0.66rem;
+      color: var(--text-dim); margin-bottom: 4px;
+    }
+    .incident-title { font-weight: 600; color: var(--red); margin-bottom: 3px; }
+    .incident-item.mitigated .incident-title { color: var(--green); }
+    .incident-path {
+      font-family: var(--mono); font-size: 0.66rem;
+      color: var(--text-muted); line-height: 1.7;
+    }
+    .incident-path .hop { color: var(--accent); }
+    .incident-badge {
+      display: inline-block; font-size: 0.6rem; font-family: var(--mono);
+      font-weight: 700; padding: 1px 6px; border-radius: 2px;
+      text-transform: uppercase; margin-right: 6px;
+    }
+    .badge-p0 { background: var(--red-dim); color: var(--red); }
+    .badge-mitigated { background: var(--green-dim); color: var(--green); }
+
+    /* Metrics panel ────────────────────── */
+    .metrics-grid {
+      display: grid; grid-template-columns: 1fr 1fr;
+      gap: 8px; padding: 12px;
+    }
+    .metric-box {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 10px 12px; text-align: center;
+    }
+    .metric-value {
+      font-family: var(--mono); font-size: 1.4rem;
+      font-weight: 700; line-height: 1.2;
+    }
+    .metric-label {
+      font-size: 0.65rem; color: var(--text-muted);
+      text-transform: uppercase; letter-spacing: 0.06em;
+      margin-top: 3px;
+    }
+    .mv-green { color: var(--green); }
+    .mv-red   { color: var(--red); }
+    .mv-yellow{ color: var(--yellow); }
+    .mv-accent{ color: var(--accent); }
+
+    /* Route visualiser ─────────────────── */
+    .route-vis { padding: 12px 14px; }
+    .route-empty { text-align:center; padding:20px; color:var(--text-dim); font-size:0.78rem; font-family:var(--mono); }
+    .route-node {
+      display:flex; align-items:center; gap:8px;
+      padding: 7px 10px;
+      background: var(--bg-secondary); border: 1px solid var(--border);
+      border-radius: 5px; margin-bottom: 4px;
+      animation: fadeUp 0.25s ease forwards;
+      opacity:0;
+    }
+    @keyframes fadeUp { from{opacity:0;transform:translateY(4px)} to{opacity:1;transform:none} }
+    .route-node.source { border-color: var(--green); }
+    .route-node.dest   { border-color: var(--accent); }
+    .route-node .rn-id { font-family:var(--mono); font-size:0.68rem; color:var(--accent); }
+    .route-node .rn-name{ font-size:0.78rem; font-weight:500; }
+    .route-arrow {
+      text-align:center; color:var(--text-dim);
+      font-size:0.8rem; padding: 1px 0 1px 16px;
+      font-family:var(--mono);
+    }
+    .route-summary {
+      margin-top: 8px; padding: 8px 10px;
+      background: var(--green-dim); border:1px solid var(--green);
+      border-radius:4px; font-family:var(--mono); font-size:0.72rem;
+      color:var(--green);
+    }
+
+    /* ── Failover alert banner ───────────────────────────────────────────── */
+    .failover-alert {
+      position: fixed; top: 66px; left: 50%; transform: translateX(-50%);
+      background: var(--red-dim); border: 1px solid var(--red);
+      border-radius: 6px; padding: 10px 20px;
+      font-family: var(--mono); font-size: 0.8rem; color: var(--red);
+      z-index: 2000; display: none;
+      box-shadow: 0 0 30px rgba(255,71,87,0.3);
+      animation: alertPulse 0.5s ease;
+    }
+    @keyframes alertPulse { from{opacity:0;transform:translateX(-50%) scale(0.95)} to{opacity:1;transform:translateX(-50%) scale(1)} }
+
+    /* ── Responsive ──────────────────────────────────────────────────────── */
+    @media (max-width: 900px) {
+      .main-layout {
+        grid-template-columns: 1fr;
+        grid-template-rows: auto 1fr auto;
+        height: auto; min-height: calc(100vh - 56px);
+      }
+      .dashboard-panel { grid-column:1; grid-row:1; margin:0.75rem 0.75rem 0.5rem; }
+      .chat-panel      { grid-column:1; grid-row:2; height:50vh; margin:0 0.75rem 0.5rem; }
+      .sidebar         { grid-column:1; grid-row:3; margin:0 0.75rem 1rem; flex-direction:row; flex-wrap:wrap; overflow-y:visible; }
+      .sidebar > * { flex:1 1 260px; }
+    }
+
+    @media (max-width: 600px) {
+      .dc-grid { grid-template-columns: 1fr 1fr; }
+      .quick-actions { display:none; }
+      .status-bar .clk { display:none; }
+    }
+
+    /* ── Utilities ───────────────────────────────────────────────────────── */
+    .mono { font-family: var(--mono); }
+    .text-accent { color: var(--accent); }
+    .text-green  { color: var(--green); }
+    .text-red    { color: var(--red); }
+    .text-yellow { color: var(--yellow); }
+    .border-accent { border-color: var(--accent) !important; }
+
+    .empty-state {
+      padding: 30px; text-align: center;
+      color: var(--text-dim); font-family: var(--mono); font-size: 0.78rem;
+    }
+    .empty-state i { font-size: 2rem; margin-bottom: 10px; display:block; }
+
+    .no-incidents {
+      text-align:center; padding:16px;
+      color:var(--text-dim); font-family:var(--mono); font-size:0.75rem;
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── Failover Alert Banner ─────────────────────────────────────────────── -->
+<div class="failover-alert" id="failoverAlert">
+  <i class="bi bi-exclamation-triangle-fill me-2"></i>
+  <span id="failoverAlertText">P0 INCIDENT DETECTED — REROUTING IN PROGRESS</span>
+</div>
+
+<!-- ── Top Navigation ────────────────────────────────────────────────────── -->
+<nav class="top-nav">
+  <a class="nav-brand" href="#">
+    <div class="logo-icon">A</div>
+    <span>ARIA</span>
+    <span class="version">v2.4.1</span>
+    <span class="d-none d-sm-inline" style="color:var(--text-dim);font-size:0.72rem;font-weight:400;">
+      Autonomous Routing &amp; Infrastructure Agent
+    </span>
+  </a>
+
+  <div class="status-bar">
+    <div class="d-flex align-items-center gap-2">
+      <div class="status-dot" id="systemStatusDot"></div>
+      <span id="systemStatusText">ALL SYSTEMS NOMINAL</span>
+    </div>
+    <span class="text-dim d-none d-md-inline">|</span>
+    <span class="mono clk" id="clockDisplay">--:--:-- UTC</span>
+    <span class="text-dim d-none d-md-inline">|</span>
+    <span class="d-none d-md-inline"><i class="bi bi-hdd-network me-1 text-accent"></i>8 DCs</span>
+  </div>
+</nav>
+
+<!-- ── Main Layout ───────────────────────────────────────────────────────── -->
+<div class="main-layout">
+
+  <!-- ── Network Dashboard ───────────────────────────────────────────────── -->
+  <div class="panel dashboard-panel">
+    <div class="panel-header">
+      <i class="bi bi-diagram-3 ph-icon"></i>
+      GLOBAL NETWORK STATUS
+      <span class="ms-auto text-dim mono" style="font-size:0.65rem;">
+        CLICK A NODE TO SET AS ORIGIN
+      </span>
+    </div>
+    <div class="dc-grid" id="dcGrid">
+      <!-- Populated by JS -->
+    </div>
+  </div>
+
+  <!-- ── Chat Panel ──────────────────────────────────────────────────────── -->
+  <div class="panel chat-panel">
+    <div class="panel-header">
+      <i class="bi bi-terminal ph-icon"></i>
+      ARIA COMMAND INTERFACE
+      <span class="ms-auto" style="font-size:0.65rem;">
+        <span class="text-green mono">■</span> Meta Llama 3.3 70B CONNECTED
+      </span>
+    </div>
+
+    <!-- Quick actions -->
+    <div class="quick-actions">
+      <button class="quick-btn" onclick="quickSend('What data centers are currently online?')">
+        <i class="bi bi-hdd-network me-1"></i>DC Status
+      </button>
+      <button class="quick-btn" onclick="quickSend('Run a full network health check')">
+        <i class="bi bi-activity me-1"></i>Health Check
+      </button>
+      <button class="quick-btn" onclick="quickSend('What is the optimal route from US East to Tokyo?')">
+        <i class="bi bi-arrow-right-circle me-1"></i>Route Query
+      </button>
+      <button class="quick-btn" onclick="quickSend('Show me the disaster recovery runbook')">
+        <i class="bi bi-book me-1"></i>DR Runbook
+      </button>
+      <button class="quick-btn" onclick="quickSend('singapore is down, initiate failover')">
+        <i class="bi bi-lightning-fill me-1 text-red"></i>Simulate P0
+      </button>
+    </div>
+
+    <!-- Messages -->
+    <div class="chat-messages" id="chatMessages">
+      <!-- Boot message -->
+      <div class="msg-row">
+        <div class="msg-avatar avatar-aria">A</div>
+        <div>
+          <div class="msg-bubble bubble-aria">ARIA SYSTEM BOOT COMPLETE ✓
+
+Autonomous Routing &amp; Infrastructure Agent online.
+IBM Watsonx.ai • Meta Llama 3.3 70B Instruct model loaded.
+Dijkstra routing engine initialised — 8 global nodes mapped.
+
+I am monitoring your cloud infrastructure in real time.
+
+To trigger a failover simulation, tell me a data center is down. For example:
+  → "Tokyo is down, initiate emergency rerouting"
+  → "us-east-1 outage detected"
+  → "Singapore DC is offline"
+
+Or ask me anything about your infrastructure. How can I assist?</div>
+          <div class="msg-meta">ARIA • <span id="bootTime"></span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Input row -->
+    <div class="chat-input-row">
+      <textarea
+        class="chat-input"
+        id="chatInput"
+        placeholder="Report an outage, request a route analysis, or ask ARIA anything…"
+        rows="1"
+      ></textarea>
+      <button class="btn-send" id="sendBtn" onclick="sendMessage()" title="Send (Enter)">
+        <i class="bi bi-send-fill"></i>
+      </button>
+    </div>
+  </div>
+
+  <!-- ── Right Sidebar ────────────────────────────────────────────────────── -->
+  <div class="sidebar">
+
+    <!-- Live Metrics -->
+    <div class="panel">
+      <div class="panel-header">
+        <i class="bi bi-bar-chart-line ph-icon"></i>
+        LIVE METRICS
+      </div>
+      <div class="metrics-grid">
+        <div class="metric-box">
+          <div class="metric-value mv-green" id="metOnline">8</div>
+          <div class="metric-label">Online DCs</div>
+        </div>
+        <div class="metric-box">
+          <div class="metric-value mv-red" id="metDown">0</div>
+          <div class="metric-label">Down DCs</div>
+        </div>
+        <div class="metric-box">
+          <div class="metric-value mv-yellow" id="metIncidents">0</div>
+          <div class="metric-label">Incidents</div>
+        </div>
+        <div class="metric-box">
+          <div class="metric-value mv-accent" id="metAvgLatency">—</div>
+          <div class="metric-label">Avg Latency</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Last Failover Route -->
+    <div class="panel">
+      <div class="panel-header">
+        <i class="bi bi-arrow-left-right ph-icon"></i>
+        LAST REROUTE PATH
+      </div>
+      <div class="route-vis" id="routeVis">
+        <div class="route-empty">
+          <i class="bi bi-slash-circle"></i><br>
+          No active reroute.<br>Awaiting incident trigger.
+        </div>
+      </div>
+    </div>
+
+    <!-- Incident Log -->
+    <div class="panel incident-panel">
+      <div class="panel-header">
+        <i class="bi bi-journal-x ph-icon"></i>
+        INCIDENT LOG
+        <span class="ms-auto">
+          <span class="mono text-dim" style="font-size:0.65rem;" id="incidentCount">0 events</span>
+        </span>
+      </div>
+      <div class="incident-list" id="incidentList">
+        <div class="no-incidents" id="noIncidents">
+          <i class="bi bi-check-circle text-green d-block mb-1" style="font-size:1.3rem;"></i>
+          No incidents recorded.<br>All systems operational.
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /sidebar -->
+</div><!-- /main-layout -->
+
+
+<!-- Bootstrap JS -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+
+<script>
+/* ═══════════════════════════════════════════════════════════════════
+   ARIA FRONTEND — Chat, Dashboard, Incident Log, Route Visualiser
+═══════════════════════════════════════════════════════════════════ */
+
+// ── State ────────────────────────────────────────────────────────
+const state = {
+  chatHistory: [],
+  incidents:   [],
+  dcStatus:    {},    // { dc_id: 'online' | 'down' | 'degraded' }
+  selectedDC:  'us-east-1',
+  incidentCount: 0,
+};
+
+// ── Data Centers (mirrored from backend) ─────────────────────────
+const DC_INFO = {{ data_centers | tojson }};
+
+// ── Clock ────────────────────────────────────────────────────────
+function updateClock() {
+  const now = new Date();
+  const h = String(now.getUTCHours()).padStart(2,'0');
+  const m = String(now.getUTCMinutes()).padStart(2,'0');
+  const s = String(now.getUTCSeconds()).padStart(2,'0');
+  document.getElementById('clockDisplay').textContent = `${h}:${m}:${s} UTC`;
+}
+setInterval(updateClock, 1000);
+updateClock();
+document.getElementById('bootTime').textContent = new Date().toUTCString().replace('GMT','UTC');
+
+// ── DC Grid Render ────────────────────────────────────────────────
+function renderDCGrid() {
+  const grid = document.getElementById('dcGrid');
+  grid.innerHTML = '';
+
+  // Sample latencies (simulated; in production these would come from monitoring)
+  const sampleLatencies = {
+    'us-east-1': 12, 'us-west-2': 18, 'eu-west-1': 22,
+    'eu-central-1': 19, 'ap-south-1': 45, 'ap-northeast-1': 58,
+    'ap-southeast-1': 41, 'sa-east-1': 67,
+  };
+
+  for (const [dcId, info] of Object.entries(DC_INFO)) {
+    const st = state.dcStatus[dcId] || 'online';
+    const isSelected = dcId === state.selectedDC;
+
+    const latMs = sampleLatencies[dcId] || '??';
+    const card = document.createElement('div');
+    card.className = `dc-card ${st === 'down' ? 'down' : st === 'degraded' ? 'degraded' : ''} ${isSelected ? 'selected' : ''}`;
+    card.dataset.dcId = dcId;
+    card.title = `Click to set ${info.name} as origin`;
+    card.innerHTML = `
+      <div class="dc-id">${dcId}</div>
+      <div class="dc-name">${info.name}</div>
+      <div class="dc-region"><i class="bi bi-geo-alt-fill me-1"></i>${info.region}</div>
+      <div class="dc-latency">RTT: <span>${st === 'down' ? '—' : latMs + ' ms'}</span></div>
+      <div class="dc-status ${st === 'online' ? 'status-online' : st === 'down' ? 'status-down' : 'status-degraded'}">
+        ${st.toUpperCase()}
+      </div>`;
+    card.addEventListener('click', () => selectOriginDC(dcId));
+    grid.appendChild(card);
+  }
+  updateMetrics();
+}
+
+function selectOriginDC(dcId) {
+  state.selectedDC = dcId;
+  renderDCGrid();
+  appendSystemMsg(`Origin node set to: ${dcId} — ${DC_INFO[dcId]?.name}`);
+}
+
+// ── Metrics update ────────────────────────────────────────────────
+function updateMetrics() {
+  const statuses = Object.values(state.dcStatus);
+  const downCount = statuses.filter(s => s === 'down').length;
+  const onlineCount = Object.keys(DC_INFO).length - downCount;
+  document.getElementById('metOnline').textContent = onlineCount;
+  document.getElementById('metDown').textContent = downCount;
+  document.getElementById('metIncidents').textContent = state.incidentCount;
+  document.getElementById('metAvgLatency').textContent = downCount > 0 ? '↑' : '~65ms';
+
+  const dot  = document.getElementById('systemStatusDot');
+  const text = document.getElementById('systemStatusText');
+  if (downCount > 0) {
+    dot.className = 'status-dot red';
+    text.textContent = `INCIDENT ACTIVE — ${downCount} DC(s) DOWN`;
+    text.style.color = 'var(--red)';
+  } else {
+    dot.className = 'status-dot';
+    text.textContent = 'ALL SYSTEMS NOMINAL';
+    text.style.color = '';
+  }
+}
+
+// ── Route Visualiser ──────────────────────────────────────────────
+function renderRouteVis(failoverData) {
+  if (!failoverData || !failoverData.alternatives || failoverData.alternatives.length === 0) return;
+  const best = failoverData.alternatives[0];
+  const vis  = document.getElementById('routeVis');
+  vis.innerHTML = '';
+
+  best.path.forEach((nodeId, idx) => {
+    const nodeEl = document.createElement('div');
+    const isFirst = idx === 0;
+    const isLast  = idx === best.path.length - 1;
+    nodeEl.className = `route-node ${isFirst ? 'source' : isLast ? 'dest' : ''}`;
+    nodeEl.style.animationDelay = `${idx * 80}ms`;
+    nodeEl.innerHTML = `
+      <i class="bi bi-${isFirst ? 'circle-fill text-green' : isLast ? 'geo-fill text-accent' : 'circle text-muted'}" style="font-size:0.7rem;flex-shrink:0;"></i>
+      <div>
+        <div class="rn-id">${nodeId}</div>
+        <div class="rn-name">${DC_INFO[nodeId]?.name || nodeId}</div>
+      </div>`;
+    vis.appendChild(nodeEl);
+    if (!isLast) {
+      const arrow = document.createElement('div');
+      arrow.className = 'route-arrow';
+      arrow.innerHTML = '↓';
+      vis.appendChild(arrow);
+    }
+  });
+
+  const summary = document.createElement('div');
+  summary.className = 'route-summary';
+  summary.innerHTML = `✓ OPTIMAL PATH &nbsp;|&nbsp; ${best.total_ms} ms &nbsp;|&nbsp; ${best.hops} hop${best.hops !== 1 ? 's' : ''}`;
+  vis.appendChild(summary);
+}
+
+// ── Incident Log ──────────────────────────────────────────────────
+function appendIncident(incident) {
+  if (!incident) return;
+  state.incidents.unshift(incident);
+  state.incidentCount++;
+  document.getElementById('noIncidents').style.display = 'none';
+  document.getElementById('incidentCount').textContent = `${state.incidentCount} event${state.incidentCount !== 1 ? 's' : ''}`;
+
+  const list = document.getElementById('incidentList');
+  const pathHtml = incident.path_names
+    .map((n, i) => `<span class="hop">${n}</span>${i < incident.path_names.length - 1 ? ' → ' : ''}`)
+    .join('');
+
+  const item = document.createElement('div');
+  item.className = 'incident-item mitigated';
+  item.innerHTML = `
+    <div class="incident-id">#INC-${String(incident.id).padStart(4,'0')} &nbsp;•&nbsp; ${incident.timestamp}</div>
+    <div class="incident-title">
+      <span class="incident-badge badge-p0">${incident.severity}</span>
+      ${incident.failed_name} OFFLINE
+    </div>
+    <div class="incident-path">
+      <div class="mb-1"><span class="incident-badge badge-mitigated">MITIGATED</span>Rerouted → ${incident.reroute_name}</div>
+      <div>Path: ${pathHtml}</div>
+      <div class="mt-1" style="color:var(--accent);">${incident.latency_ms} ms &nbsp;•&nbsp; ${incident.hops} hop${incident.hops !== 1 ? 's' : ''}</div>
+    </div>`;
+  list.insertBefore(item, list.firstChild);
+}
+
+// ── Alert Banner ──────────────────────────────────────────────────
+function showFailoverAlert(msg) {
+  const el = document.getElementById('failoverAlert');
+  document.getElementById('failoverAlertText').textContent = msg;
+  el.style.display = 'block';
+  setTimeout(() => { el.style.display = 'none'; }, 6000);
+}
+
+// ── Chat helpers ──────────────────────────────────────────────────
+function timestamp() {
+  return new Date().toLocaleTimeString('en-GB', {
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+    timeZone: 'UTC', timeZoneName: 'short'
+  });
+}
+
+function appendUserMsg(text) {
+  const msgs = document.getElementById('chatMessages');
+  const div  = document.createElement('div');
+  div.className = 'msg-row user';
+  div.innerHTML = `
+    <div class="msg-avatar avatar-user"><i class="bi bi-person-fill"></i></div>
+    <div>
+      <div class="msg-bubble bubble-user">${escHtml(text)}</div>
+      <div class="msg-meta">Operator • ${timestamp()}</div>
+    </div>`;
+  msgs.appendChild(div);
+  scrollBottom();
+}
+
+function appendAriaMsg(text, isError = false) {
+  const msgs = document.getElementById('chatMessages');
+  const div  = document.createElement('div');
+  div.className = 'msg-row';
+  div.innerHTML = `
+    <div class="msg-avatar avatar-aria">A</div>
+    <div>
+      <div class="msg-bubble bubble-aria ${isError ? 'bubble-error' : ''}">${escHtml(text)}</div>
+      <div class="msg-meta">ARIA • ${timestamp()}</div>
+    </div>`;
+  msgs.appendChild(div);
+  scrollBottom();
+}
+
+function appendSystemMsg(text) {
+  const msgs = document.getElementById('chatMessages');
+  const div  = document.createElement('div');
+  div.className = 'msg-row';
+  div.innerHTML = `<div class="msg-bubble bubble-system mono">⚙ ${escHtml(text)}</div>`;
+  msgs.appendChild(div);
+  scrollBottom();
+}
+
+function showTyping() {
+  const msgs = document.getElementById('chatMessages');
+  const row  = document.createElement('div');
+  row.className = 'msg-row'; row.id = 'typingRow';
+  row.innerHTML = `
+    <div class="msg-avatar avatar-aria">A</div>
+    <div class="typing-indicator">
+      <div class="typing-dot"></div>
+      <div class="typing-dot"></div>
+      <div class="typing-dot"></div>
+    </div>`;
+  msgs.appendChild(row);
+  scrollBottom();
+}
+
+function hideTyping() {
+  const el = document.getElementById('typingRow');
+  if (el) el.remove();
+}
+
+function scrollBottom() {
+  const msgs = document.getElementById('chatMessages');
+  msgs.scrollTop = msgs.scrollHeight;
+}
+
+function escHtml(str) {
+  return str
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;');
+}
+
+// ── Send Message ──────────────────────────────────────────────────
+async function sendMessage() {
+  const input = document.getElementById('chatInput');
+  const text  = input.value.trim();
+  if (!text) return;
+
+  setSendDisabled(true);
+  input.value = '';
+  autoResize(input);
+  appendUserMsg(text);
+  state.chatHistory.push({ role: 'user', content: text });
+  showTyping();
+
+  try {
+    const res = await fetch('/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message:   text,
+        history:   state.chatHistory.slice(-10),
+        source_dc: state.selectedDC,
+      }),
+    });
+    const data = await res.json();
+    hideTyping();
+
+    if (res.ok) {
+      const reply = data.reply || '(no response)';
+      appendAriaMsg(reply, reply.startsWith('⚠️'));
+      state.chatHistory.push({ role: 'assistant', content: reply });
+
+      // Handle failover data
+      if (data.failover_data && data.detected_dc) {
+        // Mark DC as down
+        state.dcStatus[data.detected_dc] = 'down';
+        renderDCGrid();
+        renderRouteVis(data.failover_data);
+
+        if (data.incident) {
+          appendIncident(data.incident);
+        }
+
+        const best = data.failover_data.alternatives?.[0];
+        if (best) {
+          showFailoverAlert(
+            `P0 INCIDENT — ${data.failover_data.failed_dc.toUpperCase()} OFFLINE — REROUTING TO ${best.dc_id.toUpperCase()} (${best.total_ms} ms)`
+          );
+        }
+      }
+    } else {
+      hideTyping();
+      appendAriaMsg(`⚠️ API Error: ${data.error || 'Unknown error'}`, true);
+    }
+  } catch (err) {
+    hideTyping();
+    appendAriaMsg(`⚠️ Network Error: ${err.message}`, true);
+  }
+
+  setSendDisabled(false);
+  input.focus();
+}
+
+function quickSend(text) {
+  document.getElementById('chatInput').value = text;
+  sendMessage();
+}
+
+function setSendDisabled(val) {
+  const btn = document.getElementById('sendBtn');
+  const inp = document.getElementById('chatInput');
+  btn.disabled = val;
+  inp.disabled = val;
+}
+
+// ── Textarea auto-resize ──────────────────────────────────────────
+function autoResize(el) {
+  el.style.height = 'auto';
+  el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+}
+
+document.getElementById('chatInput').addEventListener('input', function () {
+  autoResize(this);
+});
+
+document.getElementById('chatInput').addEventListener('keydown', function (e) {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendMessage();
+  }
+});
+
+// ── Initialise ────────────────────────────────────────────────────
+renderDCGrid();
+updateMetrics();
+</script>
+</body>
+</html>
